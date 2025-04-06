@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -74,61 +76,68 @@ namespace ReapersBrowser
 
             foreach (string bookmark in bookmarks)
             {
-                ToolStripButton btn = new ToolStripButton(bookmark)
+                if (bookmark.Contains("[Title:\"") && bookmark.Contains("\"][Link:\""))
                 {
-                    AutoSize = true,
-                    DisplayStyle = ToolStripItemDisplayStyle.Text
-                };
+                    string[] parts = bookmark.Split(new string[] { "\"][Link:\"" }, StringSplitOptions.None);
 
-                btn.Click += (s, e) =>
-                {
-                    string bookmarkUrl = bookmark.ToLower();
-
-                    if (IsBlockedSite(bookmarkUrl))
+                    if (parts.Length == 2)
                     {
-                        MessageBox.Show("Access to this website is blocked.", "Blocked", MessageBoxButtons.OK, MessageBoxIcon.Stop);
-                        return;
-                    }
+                        string title = parts[0].Replace("[Title:\"", "").Replace("\"", "").Trim();
+                        string url = parts[1].Replace("\"]", "").Replace("\"", "").Trim();
 
-                    if (IsMaliciousContent(bookmarkUrl))
-                    {
-                        MessageBox.Show("Malicious content detected. Navigating to a safe page.", "Security Alert", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    OpenBookmark(bookmark);
-                };
-
-                int btnWidth = TextRenderer.MeasureText(bookmark, btn.Font).Width + 20;
-                totalWidth += btnWidth;
-
-                if (totalWidth > maxWidth)
-                {
-                    ToolStripMenuItem overflowItem = new ToolStripMenuItem(bookmark);
-                    overflowItem.Click += (s, e) =>
-                    {
-                        string bookmarkUrl = bookmark.ToLower();
-
-                        if (IsBlockedSite(bookmarkUrl))
+                        ToolStripButton btn = new ToolStripButton(title)
                         {
-                            MessageBox.Show("Access to this website is blocked.", "Blocked", MessageBoxButtons.OK, MessageBoxIcon.Stop);
-                            return;
-                        }
+                            AutoSize = true,
+                            DisplayStyle = ToolStripItemDisplayStyle.Text
+                        };
 
-                        if (IsMaliciousContent(bookmarkUrl))
+                        btn.Click += (s, e) =>
                         {
-                            MessageBox.Show("Malicious content detected. Navigating to a safe page.", "Security Alert", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            return;
-                        }
+                            if (IsBlockedSite(url.ToLower()))
+                            {
+                                MessageBox.Show("Access to this website is blocked.", "Blocked", MessageBoxButtons.OK, MessageBoxIcon.Stop);
+                                return;
+                            }
 
-                        OpenBookmark(bookmark);
-                    };
-                    overflowDropDown.DropDownItems.Add(overflowItem);
-                    overflowStarted = true;
-                }
-                else
-                {
-                    toolStrip2.Items.Add(btn);
+                            if (IsMaliciousContent(url.ToLower()))
+                            {
+                                MessageBox.Show("Malicious content detected. Navigating to a safe page.", "Security Alert", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                return;
+                            }
+
+                            OpenBookmark(url);
+                        };
+
+                        int btnWidth = TextRenderer.MeasureText(title, btn.Font).Width + 20;
+                        totalWidth += btnWidth;
+
+                        if (totalWidth > maxWidth)
+                        {
+                            ToolStripMenuItem overflowItem = new ToolStripMenuItem(title);
+                            overflowItem.Click += (s, e) =>
+                            {
+                                if (IsBlockedSite(url.ToLower()))
+                                {
+                                    MessageBox.Show("Access to this website is blocked.", "Blocked", MessageBoxButtons.OK, MessageBoxIcon.Stop);
+                                    return;
+                                }
+
+                                if (IsMaliciousContent(url.ToLower()))
+                                {
+                                    MessageBox.Show("Malicious content detected. Navigating to a safe page.", "Security Alert", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                    return;
+                                }
+
+                                OpenBookmark(url);
+                            };
+                            overflowDropDown.DropDownItems.Add(overflowItem);
+                            overflowStarted = true;
+                        }
+                        else
+                        {
+                            toolStrip2.Items.Add(btn);
+                        }
+                    }
                 }
             }
 
@@ -137,6 +146,7 @@ namespace ReapersBrowser
 
             UpdateBookmarksTextBox();
         }
+
 
 
         void OpenBookmark(string bookmark)
@@ -416,7 +426,43 @@ namespace ReapersBrowser
                 return "dark";
             }
         }
-
+        void UpdateSearchBarWithCurrentURL()
+        {
+            var webView = GetCurrentWebView();
+            if (webView != null && webView.CoreWebView2 != null)
+            {
+                if (webView.Source.ToString().StartsWith("https://sites.google.com/view/reapers-browser/"))
+                {
+                    switch (webView.Source.ToString().ToLower().Substring("https://sites.google.com/view/reapers-browser/".Length))
+                    {
+                        case "home":
+                            search_bar.Text = "Reaper/ReapersBrowser/Home";
+                            break;
+                        case "downloads":
+                            search_bar.Text = "Reaper/ReapersBrowser/Downloads";
+                            break;
+                        case "changelog":
+                            search_bar.Text = "Reaper/ReapersBrowser/Changelog";
+                            break;
+                        case "license":
+                            search_bar.Text = "Reaper/ReapersBrowser/License";
+                            break;
+                        case "user-data-transfer-tutorial":
+                            search_bar.Text = "Reaper/ReapersBrowser/UserDataTransferTutorial";
+                            break;
+                        default:
+                            search_bar.Text = "Reaper/ReapersBrowser/Unknown";
+                            break;
+                    }
+                    Text = $"Reaper's Browser - {search_bar.Text}";
+                }
+                else
+                {
+                    search_bar.Text = webView.CoreWebView2.Source;
+                    Text = $"Reaper's Browser - {webView.CoreWebView2.DocumentTitle}";
+                }
+            }
+        }
         void toolStripButton1_Click(object sender, EventArgs e)
         {
             var webView = GetCurrentWebView();
@@ -426,7 +472,36 @@ namespace ReapersBrowser
                 {
                     try
                     {
-                        MessageBox.Show($"Secured connection to {webView.CoreWebView2.Source}", "Secure Connection");
+                        if (webView.Source.ToString().StartsWith("https://sites.google.com/view/reapers-browser/"))
+                        {
+                            string display_text = "";
+                            switch (webView.Source.ToString().ToLower().Substring("https://sites.google.com/view/reapers-browser/".Length))
+                            {
+                                case "home":
+                                    display_text = "Reaper/ReapersBrowser/Home";
+                                    break;
+                                case "downloads":
+                                    display_text = "Reaper/ReapersBrowser/Downloads";
+                                    break;
+                                case "changelog":
+                                    display_text = "Reaper/ReapersBrowser/Changelog";
+                                    break;
+                                case "license":
+                                    display_text = "Reaper/ReapersBrowser/License";
+                                    break;
+                                case "user-data-transfer-tutorial":
+                                    display_text = "Reaper/ReapersBrowser/UserDataTransferTutorial";
+                                    break;
+                                default:
+                                    display_text = "Reaper/ReapersBrowser/Unknown";
+                                    break;
+                            }
+                            MessageBox.Show($"Secure connection to {display_text}", "Secure Connection");
+                        }
+                        else
+                        {
+                            MessageBox.Show($"Secure connection to {webView.CoreWebView2.Source}", "Secure Connection");
+                        }
                     }
                     catch
                     {
@@ -721,20 +796,23 @@ namespace ReapersBrowser
             var webView = GetCurrentWebView();
             NewTab();
         }
-        void UpdateSearchBarWithCurrentURL()
+
+        private async Task<Image> LoadFavicon(Uri faviconUri)
         {
-            var webView = GetCurrentWebView();
-            if (webView != null && webView.CoreWebView2 != null)
+            try
             {
-                string localPath = "https://sites.google.com/view/reapers-browser/home";
-                if (webView.CoreWebView2.Source == $"{localPath}")
+                using (HttpClient client = new HttpClient())
                 {
-                    search_bar.Text = "Reaper/ReapersBrowser";
+                    byte[] faviconBytes = await client.GetByteArrayAsync(faviconUri);
+                    using (MemoryStream ms = new MemoryStream(faviconBytes))
+                    {
+                        return new Bitmap(ms);
+                    }
                 }
-                else
-                {
-                    search_bar.Text = webView.CoreWebView2.Source;
-                }
+            }
+            catch (Exception ex)
+            {
+                return new Bitmap($@"{Environment.CurrentDirectory}\def_favi.png");
             }
         }
 
@@ -749,7 +827,12 @@ namespace ReapersBrowser
             if (url == "default_browser")
                 url = load_default_browser();
 
-            webView.CoreWebView2InitializationCompleted += (sender, args) =>
+            if (tabControl1.ImageList == null)
+            {
+                tabControl1.ImageList = new ImageList();
+            }
+
+            webView.CoreWebView2InitializationCompleted += async (sender, args) =>
             {
                 webView.CoreWebView2.NewWindowRequested += (sender2, e) =>
                 {
@@ -759,7 +842,7 @@ namespace ReapersBrowser
 
                 webView.CoreWebView2.Navigate(url);
 
-                webView.CoreWebView2.NavigationCompleted += (senderNav, argsNav) =>
+                webView.CoreWebView2.NavigationCompleted += async (senderNav, argsNav) =>
                 {
                     string currentUrl = webView.CoreWebView2.Source.ToLower();
 
@@ -776,11 +859,22 @@ namespace ReapersBrowser
                         MessageBox.Show("Malicious content detected. Navigating to a safe page.", "Security Alert", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
-
                     search_bar.Text = webView.CoreWebView2.Source;
 
                     string title = webView.CoreWebView2.DocumentTitle;
                     tabPage.Text = title.Length > 16 ? title.Substring(0, 16) + "..." : title;
+
+                    var faviconUri = new Uri(currentUrl + "/favicon.ico");
+                    var favicon = await LoadFavicon(faviconUri);
+
+                    if (favicon != null && favicon is Bitmap bitmapFavicon)
+                    {
+                        try
+                        {
+                            tabPage.ImageIndex = tabControl1.ImageList.Images.Add(bitmapFavicon, Color.Transparent);
+                        }
+                        catch (ExternalException ex) {}
+                    }
 
                     LogHistory(webView.CoreWebView2.Source);
                     UpdateHistoryComboBox();
@@ -793,7 +887,6 @@ namespace ReapersBrowser
 
             return webView;
         }
-
 
 
 
@@ -878,21 +971,24 @@ namespace ReapersBrowser
             if (webView != null)
             {
                 string currentUrl = webView.Source.ToString();
+                string currentTitle = webView.CoreWebView2.DocumentTitle;
 
                 string[] bookmarks = File.Exists(bookmarks_file_path)
                     ? File.ReadAllLines(bookmarks_file_path)
                     : new string[0];
 
-                if (Array.Exists(bookmarks, bookmark => bookmark == currentUrl))
+                if (Array.Exists(bookmarks, bookmark => bookmark.Contains($"[Link:\"{currentUrl}\"]")))
                 {
                     MessageBox.Show("This page is already bookmarked.");
                 }
                 else
                 {
-                    File.AppendAllText(bookmarks_file_path, currentUrl + Environment.NewLine);
+                    string bookmark = $"[Title:\"{currentTitle}\"][Link:\"{currentUrl}\"]";
+                    File.AppendAllText(bookmarks_file_path, bookmark + Environment.NewLine);
 
-                    bookmarks_combo_box.Items.Add(currentUrl);
+                    bookmarks_combo_box.Items.Add(currentTitle);
                 }
+
                 LoadBookmarksToolStrip();
             }
         }
@@ -917,6 +1013,30 @@ namespace ReapersBrowser
                 }
             }
         }
+
+
+        private void bookmarks_textbox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                SaveBookmarks(bookmarks_textbox.Text);
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        void SaveBookmarks(string text)
+        {
+            var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(line => line.Trim())
+                            .Where(line => line.StartsWith("[Title:\"") && line.Contains("\"][Link:\"") && line.EndsWith("\"]"))
+                            .ToList();
+
+            File.WriteAllLines(bookmarks_file_path, lines);
+
+            UpdateBookmarksTextBox();
+            LoadBookmarksToolStrip();
+        }
+
         void UpdateBookmarksTextBox()
         {
             if (bookmarks_combo_box != null)
@@ -928,51 +1048,29 @@ namespace ReapersBrowser
 
                     foreach (string line in lines)
                     {
-                        bookmarks_textbox.AppendText($"{line}\r\n");
+                        if (line.Contains("[Title:\"") && line.Contains("\"][Link:\""))
+                        {
+                            string[] parts = line.Split(new string[] { "\"][Link:\"" }, StringSplitOptions.None);
+
+                            if (parts.Length == 2)
+                            {
+                                string title = parts[0].Replace("[Title:\"", "").Replace("\"", "").Trim();
+                                string url = parts[1].Replace("\"]", "").Replace("\"", "").Trim();
+
+                                bookmarks_textbox.AppendText($"[Title:\"{title}\"][Link:\"{url}\"]\r\n");
+                            }
+                        }
                     }
                 }
                 else
                 {
-                    bookmarks_textbox.AppendText("No history found.\r\n");
+                    bookmarks_textbox.AppendText("No bookmarks found.\r\n");
                 }
             }
         }
 
-        void bookmarks_textbox_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.KeyCode == Keys.Enter)
-            {
-                string input = bookmarks_combo_box.Text.Trim();
-
-                if (string.IsNullOrEmpty(input))
-                    input = bookmarks_textbox.Text.Trim();
-
-                if (!string.IsNullOrEmpty(input))
-                {
-                    if (!bookmarks_combo_box.Items.Contains(input))
-                    {
-                        bookmarks_combo_box.Items.Add(input);
-                    }
-
-                    SaveBookmarks(input);
-                    UpdateBookmarksTextBox();
-                    LoadBookmarksToolStrip();
-                }
-
-                e.SuppressKeyPress = true;
-            }
-        }
 
 
-        void SaveBookmarks(string content)
-        {
-            if (!File.Exists(bookmarks_file_path))
-            {
-                File.Create(bookmarks_file_path).Close();
-            }
-
-            File.WriteAllText(bookmarks_file_path, content);
-        }
 
 
         void history_textbox_KeyDown(object sender, KeyEventArgs e)
